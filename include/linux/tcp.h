@@ -493,6 +493,8 @@ struct tcp_sock {
 	u64		mptcp_loc_key;
 	char		mptcp_sched_name[MPTCP_SCHED_NAME_MAX];
 	char		mptcp_pm_name[MPTCP_PM_NAME_MAX];
+
+	u32 snd_cwnd_before_idle_restart; /* for ECF */
 #endif /* CONFIG_MPTCP */
 };
 
