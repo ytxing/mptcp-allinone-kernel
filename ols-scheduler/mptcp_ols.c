@@ -5,8 +5,8 @@
 #include <asm/div64.h>
 #define necessary_rate 10000000 >> 3
 static bool USE_OVERLAP __read_mostly = 1;
-module_param(cwnd_limited, bool, 0644);
-MODULE_PARM_DESC(cwnd_limited, "if set to 0, the scheduler will not send redundant data");
+module_param(USE_OVERLAP, bool, 0644);
+MODULE_PARM_DESC(USE_OVERLAP, "if set to 0, the scheduler will not send redundant data");
 
 struct olssched_priv {
 	
@@ -19,7 +19,8 @@ struct olssched_priv {
 
 	u32 red_quota;
 	u32 new_quota;
-}
+};
+
 struct olssched_priv_out {
 	/* Limited by MPTCP_SCHED_SIZE */
 	struct olssched_priv *real_priv;
@@ -28,7 +29,7 @@ struct olssched_priv_out {
 /* Returns the socket data from a given subflow socket */
 static struct olssched_priv *olssched_get_priv(struct tcp_sock *tp)
 {
-	struct olssched_priv_out *ols_p = &tp->mptcp->mptcp_sched[0];
+	struct olssched_priv_out *ols_p = (struct olssched_priv_out *)&tp->mptcp->mptcp_sched[0];
 	struct olssched_priv *real_priv = ols_p->real_priv;
 	return real_priv;
 }
@@ -339,7 +340,7 @@ static u32 get_transfer_time(struct sock* sk, struct sk_buff *skb, bool add_delt
  * May be cwnd-limited but fully established.
  */	
 static struct sock *get_fastest_subflow(struct sock *meta_sk,
-					     struct sk_buff *skb, bool *force)
+					     struct sk_buff *skb)
 {
 	//mptcp_debug(KERN_DEBUG "ytxing: ***get_fastest_subflow***\n");
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -473,7 +474,7 @@ static bool ols_check_quota(struct sock *meta_sk, struct sock *sk, bool new_flag
 		if(ols_p->red_quota)
 			ols_p->red_quota -= 1;
 		else{
-			mptcp_debug(KERN_DEBUG "no enough re_cwnd,[sk,%u,]\n",sk);
+			mptcp_debug(KERN_DEBUG "no enough red_quota,[sk,%u,]\n",sk);
 			return false;
 		}
 	}
@@ -557,10 +558,12 @@ bool overlap_check(struct sock *meta_sk, struct sk_buff *skb )
 	mptcp_debug(KERN_DEBUG "zy:[plusdelta_t,%u,us]\n",plusdelta_t >> 3);
 	//if(throughput_flag)
 		//return false;
-	if(get_transfer_time(best_sk, skb, true) > get_transfer_time(second_sk, skb, false))
-		return true;
+	if(get_transfer_time(best_sk, skb, true) < get_transfer_time(second_sk, skb, false))
+		return false;
 
+	return true;
 }
+
 
 /* We just look for any subflow that is available */
 static struct sock *ols_get_available_subflow(struct sock *meta_sk,
@@ -676,7 +679,7 @@ static struct sk_buff *mptcp_ols_next_segment(struct sock *meta_sk,
 	}
 
 	if (*reinject) {
-		*subsk = get_fastest_subflow(meta_sk, skb, false); /* ytxing: 应该选最短传输时间的流 */
+		*subsk = get_fastest_subflow(meta_sk, skb); /* ytxing: 应该选最短传输时间的流 */
 		if (!*subsk)
 			return NULL;
 
@@ -743,7 +746,7 @@ static struct sk_buff *mptcp_ols_next_segment(struct sock *meta_sk,
 	 *
 	 * Reset cb and priv!
 	 */
-	
+
 	 if(redundant_skb) {
 		second_sk = get_second_subflow(meta_sk, redundant_skb);
 		if(!second_sk) {
@@ -786,7 +789,7 @@ static struct mptcp_sched_ops mptcp_sched_ols = {
 
 static int __init ols_register(void)
 {
-	BUILD_BUG_ON(sizeof(struct olssched_priv) > MPTCP_SCHED_SIZE);
+	BUILD_BUG_ON(sizeof(struct olssched_priv_out) > MPTCP_SCHED_SIZE);
 
 	if (mptcp_register_scheduler(&mptcp_sched_ols))
 		return -1;
