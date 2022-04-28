@@ -611,6 +611,8 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 	newtp->rack.dsack_seen = 0;
 	newtp->inside_tk_table = 0;
 
+	newtp->snd_cwnd_before_idle_restart = 0; /* for ECF */
+
 	__TCP_INC_STATS(sock_net(sk), TCP_MIB_PASSIVEOPENS);
 
 	return newsk;

@@ -89,6 +89,12 @@ menuconfig MPTCP_SCHED_ADVANCED
 
 if MPTCP_SCHED_ADVANCED
 
+config MPTCP_ECF
+	tristate "MPTCP NEW ECF"
+	depends on MPTCP=y
+	---help---
+	  This is a new version of the experimental ECF scheduler.
+
 config MPTCP_BLEST
 	tristate "MPTCP BLEST"
 	depends on MPTCP=y

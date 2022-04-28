@@ -152,6 +152,14 @@ static void tcp_event_data_sent(struct tcp_sock *tp,
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	const u32 now = tcp_jiffies32;
+	
+	/* for ECF */
+	if (sock_net(sk)->ipv4.sysctl_tcp_slow_start_after_idle &&
+		(!tp->packets_out && (s32)(now - tp->lsndtime) > icsk->icsk_rto)) {
+			tp->snd_cwnd_before_idle_restart=
+					max(tp->snd_cwnd_before_idle_restart, tp->snd_cwnd);
+			tcp_cwnd_restart(sk, __sk_dst_get(sk));
+	}
 
 	if (tcp_packets_in_flight(tp) == 0)
 		tcp_ca_event(sk, CA_EVENT_TX_START);
