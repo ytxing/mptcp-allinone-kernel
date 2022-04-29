@@ -308,35 +308,36 @@ static bool ols_check_quota(struct sock *meta_sk, struct sock *sk, bool new_flag
  * the subflow socket.
  *
  * ytxing: a copy from mptcp_sched.c
+ * 20220429: ignore TSO? For simpilicity.
  */
-static int mptcp_subflow_queued(struct sock *sk, u32 max_tso_segs)
-{
-	const struct tcp_sock *tp = tcp_sk(sk);
-	unsigned int queued;
-
-	/* estimate the max number of segments in the write queue
-	 * this is an overestimation, avoiding to iterate over the queue
-	 * to make a better estimation.
-	 * Having only one skb in the queue however might trigger tso deferral,
-	 * delaying the sending of a tso segment in the hope that skb_entail
-	 * will append more data to the skb soon.
-	 * Therefore, in the case only one skb is in the queue, we choose to
-	 * potentially underestimate, risking to schedule one skb too many onto
-	 * the subflow rather than not enough.
-	 */
-	if (sk->sk_write_queue.qlen > 1)
-		queued = sk->sk_write_queue.qlen * max_tso_segs;
-	else
-		queued = sk->sk_write_queue.qlen;
-
-	return queued + tcp_packets_in_flight(tp);
-}
+// static int mptcp_subflow_queued(struct sock *sk, u32 max_tso_segs)
+// {
+// 	const struct tcp_sock *tp = tcp_sk(sk);
+// 	unsigned int queued;
+// 
+// 	/* estimate the max number of segments in the write queue
+// 	 * this is an overestimation, avoiding to iterate over the queue
+// 	 * to make a better estimation.
+// 	 * Having only one skb in the queue however might trigger tso deferral,
+// 	 * delaying the sending of a tso segment in the hope that skb_entail
+// 	 * will append more data to the skb soon.
+// 	 * Therefore, in the case only one skb is in the queue, we choose to
+// 	 * potentially underestimate, risking to schedule one skb too many onto
+// 	 * the subflow rather than not enough.
+// 	 */
+// 	if (sk->sk_write_queue.qlen > 1)
+// 		queued = sk->sk_write_queue.qlen * max_tso_segs;
+// 	else
+// 		queued = sk->sk_write_queue.qlen;
+// 
+// 	return queued + tcp_packets_in_flight(tp);
+// }
 
 bool subsk_cwnd_full(struct sock *sk){
-	u32 mss_now = tcp_current_mss(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
+	u32 queued = sk->sk_write_queue.qlen + tcp_packets_in_flight(tp);
 	/* is there still space? */
-	return mptcp_subflow_queued(sk, tcp_tso_segs(sk, mss_now)) >= tp->snd_cwnd;
+	return queued >= tp->snd_cwnd;
 }
 
 /* if not all the subflow cwnd is fully used, or there is only one subflow return false */
