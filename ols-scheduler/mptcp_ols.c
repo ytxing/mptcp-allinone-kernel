@@ -3,7 +3,12 @@
 #include <linux/module.h>
 #include <net/mptcp.h>
 #include <asm/div64.h>
-#define necessary_rate (10000000 >> 3)
+
+// ytxing: can be modified in /sys/module/mptcp_ols/parameters/
+static unsigned int necessary_rate __read_mostly = 10000000;
+module_param(necessary_rate, uint, 0644);
+MODULE_PARM_DESC(necessary_rate, "The rate OLS tries to keep (bits/s).");
+
 static bool USE_OVERLAP __read_mostly = 1;
 module_param(USE_OVERLAP, bool, 0644);
 MODULE_PARM_DESC(USE_OVERLAP, "if set to 0, the scheduler will not send redundant data");
@@ -155,14 +160,18 @@ static u32 get_transfer_time(struct sock* sk, struct sk_buff *skb, bool add_delt
 	u32 rate;
 	u32 unsent_bytes = tp->write_seq - tp->snd_nxt + skb->len;
 
+	if (unlikely(!tp->srtt_us)){
+		return 0;
+	}
+	transfer_time = tp->srtt_us >> (3 + 1); /* srtt/2 in us */
 	/* here we trust the sk->sk_pacing_rate, NO? */
 	if (unlikely(!sk->sk_pacing_rate))
-		return 0;
+		return transfer_time;
 	rate = ols_get_rate(sk);
-	transfer_time = div_u64((u64)unsent_bytes * USEC_PER_SEC, rate); /* us */
+	transfer_time += div_u64((u64)unsent_bytes * USEC_PER_SEC, rate); /* us */
 
 	if (info){
-		printk("ytxing: get_transfer_time sk:%p transfer_time:%llu unsent_bytes:%u rate:%u\n", sk, transfer_time, unsent_bytes, rate);
+		printk("ytxing: get_transfer_time sk:%p transfer_time:%llu unsent_bytes:%u rate:%u srtt(us):%u\n", sk, transfer_time, unsent_bytes, rate, tp->srtt_us >> 3);
 	}
 	if (!add_delta || !tp->srtt_us || !tp->rttvar_us)
 		return transfer_time;
@@ -314,11 +323,11 @@ static void ols_set_quota(struct sock *meta_sk, struct sock *subsk)
 	// sk_rate = div64_u64((u64)mss_now * (USEC_PER_SEC << 3) * subtp->snd_cwnd, (u64)subtp->srtt_us);
 	sk_rate = ols_get_rate(subsk);
 
-	if(necessary_rate < (total_rate - sk_rate)){
+	if((necessary_rate >> 3) < (total_rate - sk_rate)){
 		new_rate = 0;
 	}
 	else{
-		new_rate = necessary_rate - (total_rate - sk_rate);
+		new_rate = (necessary_rate >> 3) - (total_rate - sk_rate);
 	
 	}
 	new_quota_t = subtp->snd_cwnd * new_rate;
